@@ -23,8 +23,8 @@ const WeatherCard: React.FC = () => {
     // This is the secure way to handle secrets.
     // FIX: Use optional chaining (`?.`) to safely access the env variable.
     // This prevents a crash if `import.meta.env` is undefined.
-    // FIX: Add type assertion for `import.meta.env` to fix TypeScript error because Vite's `env` property on `ImportMeta` is not recognized.
-    const API_KEY = (import.meta as { env: { VITE_OPENWEATHER_API_KEY?: string } }).env?.VITE_OPENWEATHER_API_KEY;
+    // FIX: Corrected the TypeScript conversion error by first casting `import.meta` to `unknown`.
+    const API_KEY = (import.meta as unknown as { env: { VITE_OPENWEATHER_API_KEY?: string } }).env?.VITE_OPENWEATHER_API_KEY;
 
     if (!API_KEY) {
       setError("Konfigurasi API Key belum diatur. Mohon atur 'VITE_OPENWEATHER_API_KEY' jika menggunakan Vercel/Vite.");
