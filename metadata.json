@@ -1,0 +1,7 @@
+{
+  "name": "LangkahZen: Sassa-ka Walking Timer",
+  "description": "A mobile-first interval walking timer designed for the Indonesian climate, featuring environmental awareness widgets, safety features, and a Zen-Batik aesthetic.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
