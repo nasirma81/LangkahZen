@@ -1,5 +1,5 @@
 
 export enum WalkState {
-  Brisk = 'Jalan Cepat',
+  Brisk = 'Jalan Bertenaga',
   Leisurely = 'Jalan Santai',
 }

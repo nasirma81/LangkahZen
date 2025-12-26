@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Sun, AlertTriangle, Loader, CloudFog } from 'lucide-react';
 
@@ -7,7 +8,6 @@ interface WeatherData {
   condition: string;
 }
 
-// Helper to capitalize the first letter of the condition
 const capitalize = (s: string) => {
   if (typeof s !== 'string' || s.length === 0) return ''
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -19,23 +19,24 @@ const WeatherCard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Read the API key from Vercel's Environment Variables.
-    // This is the secure way to handle secrets.
-    // FIX: Use optional chaining (`?.`) to safely access the env variable.
-    // This prevents a crash if `import.meta.env` is undefined.
-    // FIX: Corrected the TypeScript conversion error by first casting `import.meta` to `unknown`.
     const API_KEY = (import.meta as unknown as { env: { VITE_OPENWEATHER_API_KEY?: string } }).env?.VITE_OPENWEATHER_API_KEY;
 
-    if (!API_KEY) {
-      setError("Konfigurasi API Key belum diatur. Mohon atur 'VITE_OPENWEATHER_API_KEY' jika menggunakan Vercel/Vite.");
-      setLoading(false);
-      return;
-    }
+    const useMockData = (message?: string) => {
+      if (message) console.warn(message);
+      setError(null); 
+      setTimeout(() => {
+        setWeather({
+          temp: 29,
+          uvIndex: 7,
+          condition: 'Sedikit Berawan',
+        });
+        setLoading(false);
+      }, 800);
+    };
 
     const fetchRealWeather = () => {
       if (!navigator.geolocation) {
-        setError("Geolocation tidak didukung oleh browser ini.");
-        setLoading(false);
+        useMockData("Geolocation tidak didukung. Menampilkan data dummy.");
         return;
       }
 
@@ -48,10 +49,11 @@ const WeatherCard: React.FC = () => {
             const response = await fetch(apiUrl);
             if (!response.ok) {
               const errorData = await response.json();
+              let errorMessage = errorData.message || 'Gagal mengambil data cuaca.';
               if (response.status === 401) {
-                  throw new Error("API Key tidak valid atau langganan 'One Call' belum aktif.");
+                  errorMessage = "API Key tidak valid. Menampilkan data dummy.";
               }
-              throw new Error(errorData.message || 'Gagal mengambil data cuaca.');
+              throw new Error(errorMessage);
             }
             const data = await response.json();
             
@@ -62,23 +64,22 @@ const WeatherCard: React.FC = () => {
             });
             setError(null);
           } catch (err) {
-            if (err instanceof Error) {
-              setError(err.message);
-            } else {
-              setError("Terjadi kesalahan yang tidak diketahui.");
-            }
+            useMockData(err instanceof Error ? err.message : "Terjadi kesalahan. Menampilkan data dummy.");
           } finally {
             setLoading(false);
           }
         },
-        (geoError) => {
-          setError("Gagal mengakses lokasi. Mohon izinkan akses lokasi.");
-          setLoading(false);
+        () => {
+          useMockData("Gagal mengakses lokasi. Menampilkan data dummy.");
         }
       );
     };
-
-    fetchRealWeather();
+    
+    if (!API_KEY) {
+      useMockData("VITE_OPENWEATHER_API_KEY tidak diatur. Menampilkan data dummy.");
+    } else {
+      fetchRealWeather();
+    }
   }, []);
 
   if (loading) {

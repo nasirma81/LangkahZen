@@ -26,64 +26,42 @@ const App: React.FC = () => {
   const chimeAudio = useRef<HTMLAudioElement | null>(null);
   const lastHydrationReminderTime = useRef(0);
 
-  // Hapus inisialisasi audio dari useEffect.
-  // Kita akan melakukannya saat pengguna berinteraksi pertama kali.
-  // useEffect(() => {
-  //   chimeAudio.current = new Audio(CHIME_URL);
-  //   chimeAudio.current.preload = 'auto';
-  // }, []);
-
   const playChime = useCallback(() => {
-    // Fungsi ini tetap sama, tapi sekarang akan bekerja karena audio sudah di-unlock.
     if (chimeAudio.current) {
       chimeAudio.current.currentTime = 0;
       chimeAudio.current.play().catch(error => console.error("Audio play failed:", error));
     }
   }, []);
 
-  const switchWalkState = useCallback(() => {
-    playChime();
-    setWalkState(prevState => {
-      if (prevState === WalkState.Brisk) {
-        setTimeLeft(LEISURELY_WALK_DURATION);
-        return WalkState.Leisurely;
-      } else {
-        setTimeLeft(BRISK_WALK_DURATION);
-        return WalkState.Brisk;
-      }
-    });
-  }, [playChime]);
-  
+  // This effect handles the countdown and stat updates when the timer is active.
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
-  
-    if (isActive) {
-      interval = setInterval(() => {
-        setTimeLeft(prevTime => {
-          if (prevTime > 1) {
-            return prevTime - 1;
-          } else {
-            switchWalkState();
-            return 0; 
-          }
-        });
-  
-        setTotalTimeWalked(prevTotal => prevTotal + 1);
-        setTotalSteps(prevSteps => {
-          const stepsPerSecond = walkState === WalkState.Brisk ? 130 / 60 : 90 / 60;
-          return prevSteps + stepsPerSecond;
-        });
-      }, 1000);
+    if (!isActive || timeLeft <= 0) {
+      return;
     }
-  
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [isActive, walkState, setTotalSteps, setTotalTimeWalked, switchWalkState]);
-  
 
+    const intervalId = setInterval(() => {
+      setTimeLeft(prevTime => prevTime - 1);
+      setTotalTimeWalked(prevTotal => prevTotal + 1);
+      setTotalSteps(prevSteps => {
+        const stepsPerSecond = walkState === WalkState.Brisk ? 130 / 60 : 90 / 60;
+        return prevSteps + stepsPerSecond;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isActive, timeLeft, walkState, setTotalTimeWalked, setTotalSteps]);
+
+  // This effect handles switching the walk state when the timer for the current state runs out.
+  useEffect(() => {
+    if (isActive && timeLeft === 0) {
+      playChime();
+      const nextState = walkState === WalkState.Brisk ? WalkState.Leisurely : WalkState.Brisk;
+      setWalkState(nextState);
+      setTimeLeft(nextState === WalkState.Brisk ? BRISK_WALK_DURATION : LEISURELY_WALK_DURATION);
+    }
+  }, [isActive, timeLeft, walkState, playChime]);
+  
+  // This effect checks for hydration milestones.
   useEffect(() => {
     const currentHydrationMilestone = Math.floor(totalTimeWalked / HYDRATION_INTERVAL);
     const lastHydrationMilestone = Math.floor(lastHydrationReminderTime.current / HYDRATION_INTERVAL);
@@ -96,14 +74,11 @@ const App: React.FC = () => {
   }, [totalTimeWalked]);
 
   const handleStart = () => {
-    // SOLUSI: Inisialisasi dan 'unlock' audio saat tombol start ditekan pertama kali.
     if (!chimeAudio.current) {
       console.log('Initializing and unlocking audio context...');
       chimeAudio.current = new Audio(CHIME_URL);
       chimeAudio.current.preload = 'auto';
 
-      // Trik untuk 'unlock': mainkan suara yang tidak terdengar.
-      // Beberapa browser/webview hanya butuh .load(), tapi play/pause lebih andal.
       const promise = chimeAudio.current.play();
       if (promise !== undefined) {
         promise.then(() => {
@@ -112,8 +87,6 @@ const App: React.FC = () => {
           console.log('Audio unlocked.');
         }).catch(error => {
           console.error("Audio unlock failed:", error);
-          // Jika gagal, mungkin audio tidak akan berfungsi sama sekali.
-          // Kita set ke null agar bisa dicoba lagi di interaksi berikutnya.
           chimeAudio.current = null;
         });
       }
@@ -165,6 +138,14 @@ const App: React.FC = () => {
   
   const themeColor = walkState === WalkState.Brisk ? '#E2725B' : '#228B22';
   const duration = walkState === WalkState.Brisk ? BRISK_WALK_DURATION : LEISURELY_WALK_DURATION;
+
+  // Dynamically update the browser's theme color
+  useEffect(() => {
+    const metaThemeColor = document.querySelector("meta[name=theme-color]");
+    if (metaThemeColor) {
+      metaThemeColor.setAttribute("content", themeColor);
+    }
+  }, [themeColor]);
 
   return (
     <>
