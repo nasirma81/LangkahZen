@@ -13,7 +13,6 @@ const BRISK_WALK_DURATION = 3 * 60; // 3 minutes
 const LEISURELY_WALK_DURATION = 3 * 60; // 3 minutes
 const HYDRATION_INTERVAL = 15 * 60; // 15 minutes
 
-// FIX: Replaced the previous URL which caused "no supported sources" errors with a more reliable one.
 const CHIME_URL = 'https://soundbible.com/mp3/service-bell_daniel_simion.mp3';
 
 const App: React.FC = () => {
@@ -27,14 +26,16 @@ const App: React.FC = () => {
   const chimeAudio = useRef<HTMLAudioElement | null>(null);
   const lastHydrationReminderTime = useRef(0);
 
-  useEffect(() => {
-    chimeAudio.current = new Audio(CHIME_URL);
-    chimeAudio.current.preload = 'auto';
-  }, []);
+  // Hapus inisialisasi audio dari useEffect.
+  // Kita akan melakukannya saat pengguna berinteraksi pertama kali.
+  // useEffect(() => {
+  //   chimeAudio.current = new Audio(CHIME_URL);
+  //   chimeAudio.current.preload = 'auto';
+  // }, []);
 
   const playChime = useCallback(() => {
+    // Fungsi ini tetap sama, tapi sekarang akan bekerja karena audio sudah di-unlock.
     if (chimeAudio.current) {
-      // Rewind to the start to allow playing the sound again if it's already playing
       chimeAudio.current.currentTime = 0;
       chimeAudio.current.play().catch(error => console.error("Audio play failed:", error));
     }
@@ -54,7 +55,6 @@ const App: React.FC = () => {
   }, [playChime]);
   
   useEffect(() => {
-    // FIX: Replace NodeJS.Timeout with a browser-compatible type for setInterval's return value.
     let interval: ReturnType<typeof setInterval> | null = null;
   
     if (isActive) {
@@ -64,7 +64,7 @@ const App: React.FC = () => {
             return prevTime - 1;
           } else {
             switchWalkState();
-            return 0; // It will be reset in switchWalkState
+            return 0; 
           }
         });
   
@@ -95,7 +95,33 @@ const App: React.FC = () => {
     }
   }, [totalTimeWalked]);
 
-  const handleStart = () => setIsActive(true);
+  const handleStart = () => {
+    // SOLUSI: Inisialisasi dan 'unlock' audio saat tombol start ditekan pertama kali.
+    if (!chimeAudio.current) {
+      console.log('Initializing and unlocking audio context...');
+      chimeAudio.current = new Audio(CHIME_URL);
+      chimeAudio.current.preload = 'auto';
+
+      // Trik untuk 'unlock': mainkan suara yang tidak terdengar.
+      // Beberapa browser/webview hanya butuh .load(), tapi play/pause lebih andal.
+      const promise = chimeAudio.current.play();
+      if (promise !== undefined) {
+        promise.then(() => {
+          chimeAudio.current?.pause();
+          chimeAudio.current!.currentTime = 0;
+          console.log('Audio unlocked.');
+        }).catch(error => {
+          console.error("Audio unlock failed:", error);
+          // Jika gagal, mungkin audio tidak akan berfungsi sama sekali.
+          // Kita set ke null agar bisa dicoba lagi di interaksi berikutnya.
+          chimeAudio.current = null;
+        });
+      }
+    }
+    
+    setIsActive(true);
+  };
+
   const handlePause = () => setIsActive(false);
 
   const handleReset = () => {
@@ -127,7 +153,6 @@ const App: React.FC = () => {
             text: message,
           }).catch(console.error);
         } else {
-          // Fallback for browsers without navigator.share
           const whatsappLink = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
           window.open(whatsappLink, '_blank');
         }
