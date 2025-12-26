@@ -199,6 +199,11 @@ const App: React.FC = () => {
             />
             <WeatherCard />
           </main>
+          
+          <footer className="w-full text-center text-slate-500 text-sm mt-8 pb-4">
+            <p>&copy; Nasir MA, 2025</p>
+          </footer>
+
         </div>
       </div>
     </>
