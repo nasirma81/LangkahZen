@@ -1,9 +1,7 @@
-
-const CACHE_NAME = 'langkahzen-cache-v1';
+const CACHE_NAME = 'langkahzen-cache-v3';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/index.tsx',
   '/manifest.webmanifest',
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap',
@@ -18,6 +16,8 @@ self.addEventListener('install', event => {
         return cache.addAll(urlsToCache);
       })
   );
+  // Force the waiting service worker to become the active service worker.
+  self.skipWaiting();
 });
 
 self.addEventListener('fetch', event => {
@@ -29,8 +29,7 @@ self.addEventListener('fetch', event => {
           return response;
         }
         return fetch(event.request);
-      }
-    )
+      })
   );
 });
 
@@ -46,5 +45,7 @@ self.addEventListener('activate', event => {
         })
       );
     })
+      // Tell the active service worker to take control of the page immediately.
+      .then(() => self.clients.claim())
   );
 });

@@ -22,6 +22,9 @@ const App: React.FC = () => {
   const [totalTimeWalked, setTotalTimeWalked] = useLocalStorage('totalTimeWalked', 0);
   const [totalSteps, setTotalSteps] = useLocalStorage('totalSteps', 0);
   const [showHydrationToast, setShowHydrationToast] = useState(false);
+  
+  // PWA Install Prompt State
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const chimeAudio = useRef<HTMLAudioElement | null>(null);
   const lastHydrationReminderTime = useRef(0);
@@ -32,6 +35,37 @@ const App: React.FC = () => {
       chimeAudio.current.play().catch(error => console.error("Audio play failed:", error));
     }
   }, []);
+
+  // Handle PWA Install Prompt
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      // Prevent the mini-infobar from appearing on mobile
+      e.preventDefault();
+      // Stash the event so it can be triggered later.
+      setInstallPrompt(e);
+      console.log("PWA Install prompt captured");
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPrompt) return;
+    
+    // Show the install prompt
+    installPrompt.prompt();
+    
+    // Wait for the user to respond to the prompt
+    const { outcome } = await installPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+    
+    // We've used the prompt, and can't use it again, discard it
+    setInstallPrompt(null);
+  };
 
   // This effect handles the countdown and stat updates when the timer is active.
   useEffect(() => {
@@ -173,6 +207,8 @@ const App: React.FC = () => {
               onReset={handleReset}
               onShareLocation={handleShareLocation}
               themeColor={themeColor}
+              showInstall={!!installPrompt}
+              onInstall={handleInstallClick}
             />
             <Stats 
               totalMinutes={Math.floor(totalTimeWalked / 60)} 

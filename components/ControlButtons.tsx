@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Play, Pause, RefreshCcw, Shield } from 'lucide-react';
+import { Play, Pause, RefreshCcw, Shield, Download } from 'lucide-react';
 
 interface ControlButtonsProps {
   isActive: boolean;
@@ -9,6 +9,8 @@ interface ControlButtonsProps {
   onReset: () => void;
   onShareLocation: () => void;
   themeColor: string;
+  showInstall: boolean;
+  onInstall: () => void;
 }
 
 const ControlButtons: React.FC<ControlButtonsProps> = ({
@@ -17,10 +19,12 @@ const ControlButtons: React.FC<ControlButtonsProps> = ({
   onPause,
   onReset,
   onShareLocation,
-  themeColor
+  themeColor,
+  showInstall,
+  onInstall
 }) => {
   return (
-    <div className="flex items-center justify-center space-x-4 w-full">
+    <div className="flex items-center justify-center space-x-4 w-full flex-wrap gap-y-2">
       <button 
         onClick={onReset}
         className="p-3 rounded-full bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors"
@@ -57,6 +61,17 @@ const ControlButtons: React.FC<ControlButtonsProps> = ({
       >
         <Shield size={24} />
       </button>
+
+      {showInstall && (
+        <button
+          onClick={onInstall}
+          className="p-3 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors animate-bounce"
+          title="Install Aplikasi"
+          aria-label="Install App"
+        >
+          <Download size={24} />
+        </button>
+      )}
     </div>
   );
 };
