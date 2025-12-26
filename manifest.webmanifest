@@ -1,0 +1,22 @@
+{
+    "name": "LangkahZen: Sassa-ka Walking Timer",
+    "short_name": "LangkahZen",
+    "description": "Aplikasi jalan kaki interval Sassa-ka dengan kearifan lokal.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#F5F5F5",
+    "theme_color": "#E2725B",
+    "orientation": "portrait",
+    "icons": [
+        {
+            "src": "/icon-192x192.png",
+            "type": "image/png",
+            "sizes": "192x192"
+        },
+        {
+            "src": "/icon-512x512.png",
+            "type": "image/png",
+            "sizes": "512x512"
+        }
+    ]
+}
