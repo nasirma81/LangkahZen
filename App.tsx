@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { WalkState } from './types';
 import TimerDisplay from './components/TimerDisplay';
@@ -14,6 +13,8 @@ const LEISURELY_WALK_DURATION = 3 * 60; // 3 minutes
 const HYDRATION_INTERVAL = 15 * 60; // 15 minutes
 
 const CHIME_URL = 'https://soundbible.com/mp3/service-bell_daniel_simion.mp3';
+// Tiny silent WAV file in base64 to keep the audio thread active
+const SILENT_AUDIO_URL = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAgZGF0YQQAAAAAAA==';
 
 const App: React.FC = () => {
   const [walkState, setWalkState] = useState<WalkState>(WalkState.Brisk);
@@ -27,6 +28,7 @@ const App: React.FC = () => {
   const [installPrompt, setInstallPrompt] = useState<any>(null);
 
   const chimeAudio = useRef<HTMLAudioElement | null>(null);
+  const silentAudio = useRef<HTMLAudioElement | null>(null); // Ref for silent loop
   const lastHydrationReminderTime = useRef(0);
 
   // References for accurate timing handling (Background throttling fix)
@@ -34,10 +36,58 @@ const App: React.FC = () => {
   const lastTickRef = useRef<number>(0);
   const wakeLockRef = useRef<any>(null);
 
+  // Initialize Audio Objects
+  useEffect(() => {
+    chimeAudio.current = new Audio(CHIME_URL);
+    silentAudio.current = new Audio(SILENT_AUDIO_URL);
+    silentAudio.current.loop = true; // Crucial: Loop the silent audio
+    
+    // Cleanup
+    return () => {
+        if (silentAudio.current) {
+            silentAudio.current.pause();
+            silentAudio.current = null;
+        }
+    };
+  }, []);
+
   const playChime = useCallback(() => {
     if (chimeAudio.current) {
       chimeAudio.current.currentTime = 0;
       chimeAudio.current.play().catch(error => console.error("Audio play failed:", error));
+    }
+  }, []);
+
+  const triggerHaptic = useCallback(() => {
+    if (navigator.vibrate) {
+        // Pattern: Long vibrate (500ms), pause (200ms), Long vibrate (500ms)
+        navigator.vibrate([500, 200, 500]);
+    }
+  }, []);
+
+  const sendNotification = useCallback((title: string, body: string) => {
+    if (Notification.permission === 'granted') {
+        try {
+            // Check if service worker is ready for richer notifications, else fallback to basic
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                 navigator.serviceWorker.ready.then((registration) => {
+                    registration.showNotification(title, {
+                        body: body,
+                        icon: '/icon-192x192.png',
+                        vibrate: [500, 200, 500],
+                        tag: 'timer-update',
+                        renotify: true
+                    } as any);
+                 });
+            } else {
+                new Notification(title, {
+                    body: body,
+                    icon: '/icon-192x192.png',
+                });
+            }
+        } catch (e) {
+            console.error("Notification failed", e);
+        }
     }
   }, []);
 
@@ -107,7 +157,6 @@ const App: React.FC = () => {
         const now = Date.now();
         
         // Calculate remaining time based on absolute timestamps
-        // This ensures accuracy even if the browser throttles the interval
         const targetTime = endTimeRef.current || now;
         const delta = targetTime - now;
         const remainingSeconds = Math.max(0, Math.ceil(delta / 1000));
@@ -119,7 +168,7 @@ const App: React.FC = () => {
         // Update UI
         setTimeLeft(remainingSeconds);
 
-        // Update Stats (accumulate fractional seconds to prevent loss)
+        // Update Stats
         if (timePassedSinceLastTick > 0) {
             setTotalTimeWalked(prev => prev + timePassedSinceLastTick);
             
@@ -129,10 +178,20 @@ const App: React.FC = () => {
 
         // Phase Switch Logic
         if (remainingSeconds <= 0) {
+          // 1. Play Sound
           playChime();
           
-          // Switch State
+          // 2. Determine Next State
           const nextState = walkState === WalkState.Brisk ? WalkState.Leisurely : WalkState.Brisk;
+          
+          // 3. Trigger Haptic & Notification
+          triggerHaptic();
+          sendNotification(
+            "Ganti Fase!", 
+            `Waktunya ${nextState === WalkState.Brisk ? 'Jalan Bertenaga' : 'Jalan Santai'} sekarang!`
+          );
+
+          // 4. Update State & Timer
           const nextDuration = nextState === WalkState.Brisk ? BRISK_WALK_DURATION : LEISURELY_WALK_DURATION;
           
           setWalkState(nextState);
@@ -152,9 +211,9 @@ const App: React.FC = () => {
     return () => {
       clearInterval(intervalId);
     };
-  }, [isActive, walkState, playChime, timeLeft, setTotalTimeWalked, setTotalSteps]);
+  }, [isActive, walkState, playChime, timeLeft, setTotalTimeWalked, setTotalSteps, triggerHaptic, sendNotification]);
   
-  // Re-request wake lock if visibility changes (user switches apps and comes back)
+  // Re-request wake lock if visibility changes
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isActive) {
@@ -178,22 +237,23 @@ const App: React.FC = () => {
   }, [totalTimeWalked]);
 
   const handleStart = () => {
-    if (!chimeAudio.current) {
-      console.log('Initializing and unlocking audio context...');
-      chimeAudio.current = new Audio(CHIME_URL);
-      chimeAudio.current.preload = 'auto';
+    // 1. Unlock Chime Audio (Browser Policy)
+    if (chimeAudio.current) {
+        chimeAudio.current.play().then(() => {
+            chimeAudio.current?.pause();
+            chimeAudio.current!.currentTime = 0;
+        }).catch(err => console.log("Chime unlock error", err));
+    }
 
-      const promise = chimeAudio.current.play();
-      if (promise !== undefined) {
-        promise.then(() => {
-          chimeAudio.current?.pause();
-          chimeAudio.current!.currentTime = 0;
-          console.log('Audio unlocked.');
-        }).catch(error => {
-          console.error("Audio unlock failed:", error);
-          chimeAudio.current = null;
-        });
-      }
+    // 2. Start Silent Loop (Keep-Alive Hack)
+    // This tricks the OS into thinking a music player is active
+    if (silentAudio.current) {
+        silentAudio.current.play().catch(err => console.error("Silent audio failed", err));
+    }
+
+    // 3. Request Notification Permission
+    if ("Notification" in window && Notification.permission !== "granted") {
+        Notification.requestPermission();
     }
     
     // Ensure lastTick is set to now so stats don't jump
@@ -203,11 +263,18 @@ const App: React.FC = () => {
 
   const handlePause = () => {
     setIsActive(false);
-    // endTimeRef will be cleared by the effect cleanup
+    // Pause silent loop to save battery when explicitly paused by user
+    if (silentAudio.current) {
+        silentAudio.current.pause();
+    }
   };
 
   const handleReset = () => {
     setIsActive(false);
+    if (silentAudio.current) {
+        silentAudio.current.pause();
+        silentAudio.current.currentTime = 0;
+    }
     setWalkState(WalkState.Brisk);
     setTimeLeft(BRISK_WALK_DURATION);
     endTimeRef.current = null; // Clear ref
