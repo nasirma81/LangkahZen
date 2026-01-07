@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { WalkState } from './types';
 import TimerDisplay from './components/TimerDisplay';
@@ -237,23 +238,34 @@ const App: React.FC = () => {
   }, [totalTimeWalked]);
 
   const handleStart = () => {
-    // 1. Unlock Chime Audio (Browser Policy)
-    if (chimeAudio.current) {
-        chimeAudio.current.play().then(() => {
-            chimeAudio.current?.pause();
-            chimeAudio.current!.currentTime = 0;
-        }).catch(err => console.log("Chime unlock error", err));
+    // 0. PRIORITY: Request Notification Permission IMMEDIATELY
+    // Must be the very first thing to satisfy "User Gesture" policy on mobile
+    if ("Notification" in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                console.log("Notifikasi diizinkan.");
+                // Optional: Kirim notifikasi test kecil
+                // new Notification("LangkahZen", { body: "Notifikasi aktif!" });
+            }
+        });
+      } else if (Notification.permission === 'denied') {
+        alert("Izin notifikasi diblokir. Mohon reset izin di pengaturan browser (ikon gembok di URL bar) agar timer berjalan optimal saat layar mati.");
+      }
     }
 
-    // 2. Start Silent Loop (Keep-Alive Hack)
+    // 1. Start Silent Loop (Keep-Alive Hack) - Trigger synchronous play if possible
     // This tricks the OS into thinking a music player is active
     if (silentAudio.current) {
         silentAudio.current.play().catch(err => console.error("Silent audio failed", err));
     }
 
-    // 3. Request Notification Permission
-    if ("Notification" in window && Notification.permission !== "granted") {
-        Notification.requestPermission();
+    // 2. Unlock Chime Audio (Browser Policy)
+    if (chimeAudio.current) {
+        chimeAudio.current.play().then(() => {
+            chimeAudio.current?.pause();
+            chimeAudio.current!.currentTime = 0;
+        }).catch(err => console.log("Chime unlock error", err));
     }
     
     // Ensure lastTick is set to now so stats don't jump
