@@ -29,6 +29,11 @@ const App: React.FC = () => {
   const chimeAudio = useRef<HTMLAudioElement | null>(null);
   const lastHydrationReminderTime = useRef(0);
 
+  // References for accurate timing handling (Background throttling fix)
+  const endTimeRef = useRef<number | null>(null);
+  const lastTickRef = useRef<number>(0);
+  const wakeLockRef = useRef<any>(null);
+
   const playChime = useCallback(() => {
     if (chimeAudio.current) {
       chimeAudio.current.currentTime = 0;
@@ -39,9 +44,7 @@ const App: React.FC = () => {
   // Handle PWA Install Prompt
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
-      // Prevent the mini-infobar from appearing on mobile
       e.preventDefault();
-      // Stash the event so it can be triggered later.
       setInstallPrompt(e);
       console.log("PWA Install prompt captured");
     };
@@ -55,47 +58,114 @@ const App: React.FC = () => {
 
   const handleInstallClick = async () => {
     if (!installPrompt) return;
-    
-    // Show the install prompt
     installPrompt.prompt();
-    
-    // Wait for the user to respond to the prompt
     const { outcome } = await installPrompt.userChoice;
     console.log(`User response to the install prompt: ${outcome}`);
-    
-    // We've used the prompt, and can't use it again, discard it
     setInstallPrompt(null);
   };
 
-  // This effect handles the countdown and stat updates when the timer is active.
+  // Function to request Wake Lock (Keep screen on)
+  const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        console.log('Screen Wake Lock active');
+      } catch (err) {
+        console.error(`${err.name}, ${err.message}`);
+      }
+    }
+  };
+
+  // Function to release Wake Lock
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        console.log('Screen Wake Lock released');
+      } catch (err) {
+        console.error(`${err.name}, ${err.message}`);
+      }
+    }
+  };
+
+  // Main Timer Logic using Timestamp Delta
   useEffect(() => {
-    if (!isActive || timeLeft <= 0) {
-      return;
+    let intervalId: number;
+
+    if (isActive) {
+      // 1. Activate Wake Lock
+      requestWakeLock();
+
+      // 2. Set Target Time if not set (Initial start or Resume)
+      if (!endTimeRef.current) {
+        endTimeRef.current = Date.now() + (timeLeft * 1000);
+        lastTickRef.current = Date.now();
+      }
+
+      intervalId = setInterval(() => {
+        const now = Date.now();
+        
+        // Calculate remaining time based on absolute timestamps
+        // This ensures accuracy even if the browser throttles the interval
+        const targetTime = endTimeRef.current || now;
+        const delta = targetTime - now;
+        const remainingSeconds = Math.max(0, Math.ceil(delta / 1000));
+
+        // Calculate stats based on actual time passed since last tick
+        const timePassedSinceLastTick = (now - lastTickRef.current) / 1000;
+        lastTickRef.current = now;
+
+        // Update UI
+        setTimeLeft(remainingSeconds);
+
+        // Update Stats (accumulate fractional seconds to prevent loss)
+        if (timePassedSinceLastTick > 0) {
+            setTotalTimeWalked(prev => prev + timePassedSinceLastTick);
+            
+            const stepsPerSecond = walkState === WalkState.Brisk ? 130 / 60 : 90 / 60;
+            setTotalSteps(prev => prev + (stepsPerSecond * timePassedSinceLastTick));
+        }
+
+        // Phase Switch Logic
+        if (remainingSeconds <= 0) {
+          playChime();
+          
+          // Switch State
+          const nextState = walkState === WalkState.Brisk ? WalkState.Leisurely : WalkState.Brisk;
+          const nextDuration = nextState === WalkState.Brisk ? BRISK_WALK_DURATION : LEISURELY_WALK_DURATION;
+          
+          setWalkState(nextState);
+          setTimeLeft(nextDuration);
+          
+          // Reset the target time for the new phase immediately
+          endTimeRef.current = now + (nextDuration * 1000);
+        }
+
+      }, 1000);
+    } else {
+      // Cleanup when paused
+      releaseWakeLock();
+      endTimeRef.current = null;
     }
 
-    const intervalId = setInterval(() => {
-      setTimeLeft(prevTime => prevTime - 1);
-      setTotalTimeWalked(prevTotal => prevTotal + 1);
-      setTotalSteps(prevSteps => {
-        const stepsPerSecond = walkState === WalkState.Brisk ? 130 / 60 : 90 / 60;
-        return prevSteps + stepsPerSecond;
-      });
-    }, 1000);
-
-    return () => clearInterval(intervalId);
-  }, [isActive, timeLeft, walkState, setTotalTimeWalked, setTotalSteps]);
-
-  // This effect handles switching the walk state when the timer for the current state runs out.
-  useEffect(() => {
-    if (isActive && timeLeft === 0) {
-      playChime();
-      const nextState = walkState === WalkState.Brisk ? WalkState.Leisurely : WalkState.Brisk;
-      setWalkState(nextState);
-      setTimeLeft(nextState === WalkState.Brisk ? BRISK_WALK_DURATION : LEISURELY_WALK_DURATION);
-    }
-  }, [isActive, timeLeft, walkState, playChime]);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isActive, walkState, playChime, timeLeft, setTotalTimeWalked, setTotalSteps]);
   
-  // This effect checks for hydration milestones.
+  // Re-request wake lock if visibility changes (user switches apps and comes back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isActive) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isActive]);
+
+  // Hydration Check
   useEffect(() => {
     const currentHydrationMilestone = Math.floor(totalTimeWalked / HYDRATION_INTERVAL);
     const lastHydrationMilestone = Math.floor(lastHydrationReminderTime.current / HYDRATION_INTERVAL);
@@ -126,15 +196,21 @@ const App: React.FC = () => {
       }
     }
     
+    // Ensure lastTick is set to now so stats don't jump
+    lastTickRef.current = Date.now();
     setIsActive(true);
   };
 
-  const handlePause = () => setIsActive(false);
+  const handlePause = () => {
+    setIsActive(false);
+    // endTimeRef will be cleared by the effect cleanup
+  };
 
   const handleReset = () => {
     setIsActive(false);
     setWalkState(WalkState.Brisk);
     setTimeLeft(BRISK_WALK_DURATION);
+    endTimeRef.current = null; // Clear ref
     if (window.confirm("Apakah Anda ingin mereset total statistik (langkah dan menit)?")) {
       setTotalTimeWalked(0);
       setTotalSteps(0);
